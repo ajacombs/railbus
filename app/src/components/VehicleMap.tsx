@@ -1,4 +1,4 @@
-import maplibre from "maplibre-gl";
+import maplibre, { MapGeoJSONFeature, MapMouseEvent } from "maplibre-gl";
 import React, { useEffect, useState } from "react";
 import { z } from "zod";
 
@@ -9,6 +9,7 @@ interface VehicleObservation {
   lon: number;
   tripId: string | null;
   routeId: string | null;
+  railbusRouteName: string | null;
   tripStartTime: string | null;
   currentPassengerCount: number | null;
   totalPassengerCount: number | null;
@@ -49,6 +50,7 @@ function parseVehicleObservation(
     lon: raw.locationDetails.simpleLocationDetails.lon,
     tripId: raw.tripDetails.tripId,
     routeId: raw.tripDetails.routeId,
+    railbusRouteName: null,
     tripStartTime: raw.tripDetails.tripStartTime,
     currentPassengerCount: raw.tripDetails.currentPassengerCount,
     totalPassengerCount: raw.tripDetails.totalPassengerCount,
@@ -82,27 +84,19 @@ const RailbusRoutes: {
   JVL: { start: 63, end: 69, colour: "#42c3dc" },
 };
 
-function filterOnlyRailbusesAndNotInService(
+function addRailbusRouteName(
   vehicles: VehicleObservation[]
 ): VehicleObservation[] {
-  return vehicles
-    .filter((vehicle) => {
-      if (vehicle.routeId === null) return true; // Keep vehicles with a null routeId
-      const routeId = parseInt(vehicle.routeId, 10);
-      return Object.values(RailbusRoutes).some(
-        (range) => routeId >= range.start && routeId <= range.end
-      );
-    })
-    .map((vehicle) => {
-      if (vehicle.routeId === null) return vehicle; // No change for vehicles with a null routeId
-      const routeId = parseInt(vehicle.routeId, 10);
-      for (const [railLineName, range] of Object.entries(RailbusRoutes)) {
-        if (routeId >= range.start && routeId <= range.end) {
-          return { ...vehicle, routeId: railLineName };
-        }
+  return vehicles.map((vehicle) => {
+    if (vehicle.routeId === null) return vehicle;
+    const routeId = parseInt(vehicle.routeId, 10);
+    for (const [railLineName, range] of Object.entries(RailbusRoutes)) {
+      if (routeId >= range.start && routeId <= range.end) {
+        return { ...vehicle, railbusRouteName: railLineName };
       }
-      return vehicle;
-    });
+    }
+    return vehicle;
+  });
 }
 
 export default function VehicleMap() {
@@ -114,11 +108,9 @@ export default function VehicleMap() {
     const updateVehicles = async () => {
       try {
         const fetchedVehicles = await fetchVehicles();
-        const filteredVehicles =
-          filterOnlyRailbusesAndNotInService(fetchedVehicles);
         console.log(`Fetched ${fetchedVehicles.length} vehicles`);
-        console.log(`Filtered down to ${filteredVehicles.length} vehicles`);
-        setVehicles(filteredVehicles);
+        const processedVehicles = addRailbusRouteName(fetchedVehicles);
+        setVehicles(processedVehicles);
       } catch (error) {
         console.error("Error fetching bus data:", error);
       }
@@ -158,41 +150,29 @@ export default function VehicleMap() {
       });
 
       mapRef.current.addLayer({
-        id: `${sourceId}-label`,
-        type: "symbol",
-        source: sourceId,
-        layout: {
-          "text-field": [
-            "concat",
-            "Vehicle: ",
-            ["get", "vehicleId"],
-            "\nRoute: ",
-            ["get", "routeId"],
-            "\n Trip: ",
-            ["get", "tripId"],
-          ],
-          "text-variable-anchor": ["top", "bottom", "left", "right"],
-          "text-radial-offset": 0.5,
-          "text-justify": "auto",
-          "text-size": 12,
-        },
-        paint: {
-          "text-color": "#000000",
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 1,
-        },
-        filter: ["!=", ["get", "routeId"], ""],
-      });
-
-      mapRef.current.addLayer({
-        id: sourceId,
+        id: "notinservicePoints",
         type: "circle",
         source: sourceId,
         paint: {
-          "circle-radius": ["case", ["!=", ["get", "routeId"], ""], 6, 3],
+          "circle-radius": 5,
+          "circle-color": "#808080",
+          "circle-opacity": 0.8,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1,
+          "circle-stroke-opacity": 0.5,
+        },
+        filter: ["==", ["get", "routeId"], ""],
+      });
+
+      mapRef.current.addLayer({
+        id: "railbusPoints",
+        type: "circle",
+        source: sourceId,
+        paint: {
+          "circle-radius": 10,
           "circle-color": [
             "match",
-            ["get", "routeId"],
+            ["get", "railbusRouteName"],
             "KPL",
             RailbusRoutes.KPL.colour,
             "MEL",
@@ -203,14 +183,80 @@ export default function VehicleMap() {
             RailbusRoutes.HVL.colour,
             "JVL",
             RailbusRoutes.JVL.colour,
-            "#808080", // Default to grey if routeId is null
+            "#FF0000",
           ],
           "circle-opacity": 0.8,
           "circle-stroke-color": "#ffffff",
           "circle-stroke-width": 1,
           "circle-stroke-opacity": 0.5,
         },
+        filter: ["!=", ["get", "railbusRouteName"], ""],
       });
+
+      mapRef.current.addLayer({
+        id: "railbusLabels",
+        type: "symbol",
+        source: sourceId,
+        layout: {
+          "text-field": [
+            "format",
+            ["get", "railbusRouteName"],
+            { "text-font": ["literal", ["Stadia Bold"]] },
+            ", Trip ID: ",
+            { "text-font": ["literal", ["Stadia Regular"]] },
+            ["get", "tripId"],
+            { "text-font": ["literal", ["Stadia Regular"]] },
+            ", Vehicle ID: ",
+            { "text-font": ["literal", ["Stadia Regular"]] },
+            ["get", "vehicleId"],
+            { "text-font": ["literal", ["Stadia Regular"]] },
+          ],
+          "text-anchor": "left",
+          "text-radial-offset": 1,
+          "text-justify": "left",
+          "text-size": 14,
+        },
+        paint: {
+          "text-color": "#000000",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1,
+        },
+        filter: ["!=", ["get", "railbusRouteName"], ""],
+      });
+    });
+
+    mapRef.current.on(
+      "click",
+      "notinservicePoints",
+      (e: MapMouseEvent & { features?: MapGeoJSONFeature[] }) => {
+        if (!mapRef.current || !e.features || e.features.length === 0) return;
+
+        const feat = e.features[0];
+        const geom = feat.geometry;
+
+        if (geom.type !== "Point") return;
+
+        new maplibre.Popup()
+          .setLngLat(geom.coordinates as [number, number])
+          .setHTML(`Vehicle ID: ${feat.properties?.vehicleId}`)
+          .addTo(mapRef.current);
+      }
+    );
+
+    // Change the cursor to a pointer when the mouse is over the places layer.
+    mapRef.current.on("mouseenter", "notinservicePoints", () => {
+      if (!mapRef.current) {
+        return;
+      }
+      mapRef.current.getCanvas().style.cursor = "pointer";
+    });
+
+    // Change it back to a pointer when it leaves.
+    mapRef.current.on("mouseleave", "notinservicePoints", () => {
+      if (!mapRef.current) {
+        return;
+      }
+      mapRef.current.getCanvas().style.cursor = "";
     });
 
     return () => {
@@ -237,6 +283,7 @@ export default function VehicleMap() {
           vehicleId: vehicle.vehicleId,
           tripId: vehicle.tripId,
           routeId: vehicle.routeId || "",
+          railbusRouteName: vehicle.railbusRouteName || "",
           currentPassengerCount: vehicle.currentPassengerCount || "",
           totalPassengerCount: vehicle.totalPassengerCount || "",
         },
@@ -249,4 +296,4 @@ export default function VehicleMap() {
   }, [vehicles]);
 
   return <div id="map" />;
-};
+}

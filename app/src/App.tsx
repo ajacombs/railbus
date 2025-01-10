@@ -1,3 +1,4 @@
+import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 import VehicleMap from "./components/VehicleMap";
 

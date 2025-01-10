@@ -1,3 +1,3 @@
-# Wellington Transit Map
+# Wellington buses replacing trains map
 
-Experimental map of transit in Wellington, NZ
+Experimental map of buses replacing trains in Wellington, NZ
