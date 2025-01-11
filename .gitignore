@@ -3,5 +3,5 @@
 
 .vscode
 
-data/
-pages/
+/data/
+/pages/
