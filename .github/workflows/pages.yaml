@@ -34,10 +34,8 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Install dependencies
         run: npm install
-        working-directory: ./app
       - name: Build the app
         run: npm run build
-        working-directory: ./app
         env:
           PAGECRYPT_PASSWORD: ${{ secrets.PAGECRYPT_PASSWORD }}
           VITE_SNAPPER_API_KEY: ${{ secrets.VITE_SNAPPER_API_KEY }}

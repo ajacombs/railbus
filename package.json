@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && pagecrypt dist/index.html ../pages/index.html $PAGECRYPT_PASSWORD",
+    "build": "tsc -b && vite build && pagecrypt dist/index.html pages/index.html $PAGECRYPT_PASSWORD",
     "lint": "eslint .",
     "preview": "vite preview",
     "analyze": "source-map-explorer 'dist/**/*.js'"
